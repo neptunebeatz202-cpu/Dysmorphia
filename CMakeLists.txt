@@ -49,6 +49,11 @@ target_sources(Dysmorphia
 
 target_include_directories(Dysmorphia PRIVATE Source)
 
+# ─── Generate JuceHeader.h ────────────────────────────────────────────────────
+# Required when using JUCE via FetchContent — generates the JuceHeader.h that
+# PluginProcessor.h and PluginEditor.h include via <JuceHeader.h>.
+juce_generate_juce_header(Dysmorphia)
+
 # ─── Binary resources ─────────────────────────────────────────────────────────
 # Place saya.jpg in the Resources/ folder before building.
 # The CMake conditional below embeds it at compile time via BinaryData.
