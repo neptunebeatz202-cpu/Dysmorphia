@@ -1,0 +1,149 @@
+name: Build Dysmorphia
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE:  Release
+  PLUGIN_NAME: Dysmorphia
+
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ───────────────────────────────────────────────────
+  # Windows  →  VST3 + VST (legacy)
+  # ───────────────────────────────────────────────────
+  build-windows:
+    name: "Windows · VST3 + VST"
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Cache JUCE fetch
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key:  juce-win-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: juce-win-
+
+      - name: Configure
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+      - name: Build
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+
+      - name: Collect outputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist\Windows | Out-Null
+          $base = "build\${{ env.PLUGIN_NAME }}_artefacts\${{ env.BUILD_TYPE }}"
+          foreach ($fmt in "VST3","VST") {
+            $p = "$base\$fmt"
+            if (Test-Path $p) { Copy-Item -Recurse -Force $p dist\Windows\ }
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PLUGIN_NAME }}-Windows
+          path: dist/Windows/
+          if-no-files-found: warn
+          retention-days: 30
+
+  # ───────────────────────────────────────────────────
+  # macOS  →  VST3 + AU  (universal arm64 + x86_64)
+  # ───────────────────────────────────────────────────
+  build-macos:
+    name: "macOS · VST3 + AU (Universal)"
+    runs-on: macos-14          # Apple Silicon runner
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Xcode CLI tools
+        run: xcode-select --install 2>/dev/null || true
+
+      - name: Cache JUCE fetch
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key:  juce-mac-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: juce-mac-
+
+      - name: Configure (Universal Binary)
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="10.13"
+
+      - name: Build
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel $(sysctl -n hw.logicalcpu)
+
+      - name: Collect outputs
+        run: |
+          mkdir -p dist/macOS
+          BASE="build/${{ env.PLUGIN_NAME }}_artefacts/${{ env.BUILD_TYPE }}"
+          [ -d "$BASE/VST3" ] && cp -R "$BASE/VST3" dist/macOS/
+          [ -d "$BASE/AU"   ] && cp -R "$BASE/AU"   dist/macOS/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PLUGIN_NAME }}-macOS
+          path: dist/macOS/
+          if-no-files-found: warn
+          retention-days: 30
+
+  # ───────────────────────────────────────────────────
+  # GitHub Release  (only on push to main / master)
+  # ───────────────────────────────────────────────────
+  release:
+    name: "Create GitHub Release"
+    needs: [ build-windows, build-macos ]
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Zip per platform
+        run: |
+          cd release-artifacts
+          zip -r "../${{ env.PLUGIN_NAME }}-Windows.zip" \
+              "${{ env.PLUGIN_NAME }}-Windows/"
+          zip -r "../${{ env.PLUGIN_NAME }}-macOS.zip" \
+              "${{ env.PLUGIN_NAME }}-macOS/"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name:           "v${{ github.run_number }}"
+          name:               "${{ env.PLUGIN_NAME }} Build ${{ github.run_number }}"
+          draft:              false
+          prerelease:         true
+          generate_release_notes: true
+          files: |
+            ${{ env.PLUGIN_NAME }}-Windows.zip
+            ${{ env.PLUGIN_NAME }}-macOS.zip
