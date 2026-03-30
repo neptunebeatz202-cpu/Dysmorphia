@@ -47,7 +47,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist\Windows | Out-Null
           $base = "build\${{ env.PLUGIN_NAME }}_artefacts\${{ env.BUILD_TYPE }}"
-          foreach ($fmt in "VST3","VST") {
+          foreach ($fmt in "VST3") {
             $p = "$base\$fmt"
             if (Test-Path $p) { Copy-Item -Recurse -Force $p dist\Windows\ }
           }
