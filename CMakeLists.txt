@@ -23,7 +23,7 @@ juce_add_plugin(Dysmorphia
     COMPANY_NAME                "kyoa"
     PLUGIN_MANUFACTURER_CODE    "KYOA"
     PLUGIN_CODE                 "Dysm"
-    FORMATS                     VST3 AU VST
+    FORMATS                     VST3 AU
     PRODUCT_NAME                "Dysmorphia"
     VERSION                     "1.0.0"
     BUNDLE_ID                   "com.kyoa.dysmorphia"
